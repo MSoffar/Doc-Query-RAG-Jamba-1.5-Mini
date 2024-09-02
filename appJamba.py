@@ -216,7 +216,7 @@ if st.button("Ask") and query:
                     model="jamba-1.5-mini",
                     messages=[
                         ChatMessage(role="system",
-                                    content="You are a helpful and knowledgeable assistant. You are given a set of text chunks from documents, along with metadata such as title, summary, and keywords. Please find the most relevant information based on the question below, using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, covering all aspects of the question to the best of your ability. MOST IMPORTANT RULE AND DONT EVER BREAK IT! ONLY ANSWER FROM INFO IN CHUNKS! DONT EVER ANSWER FROM YOUR KNOWLEDGE DONT USE ANYTHING EXCEPT THE CHUNKS!The response should be in this format: {User Query: Your Response}"),
+                                    content="You are a helpful and knowledgeable assistant. You are given a set of text chunks from documents, along with metadata such as title, summary, and keywords. Please find the most relevant information based on the question below, using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, covering all aspects of the question to the best of your ability. MOST IMPORTANT RULE AND DONT EVER BREAK IT! ONLY ANSWER FROM INFO IN CHUNKS! DONT EVER ANSWER FROM YOUR KNOWLEDGE DONT USE ANYTHING EXCEPT THE CHUNKS!The response should be in this format: Q: \n A:"),
                         ChatMessage(role="user", content=user_prompt)
                     ]
                 )
