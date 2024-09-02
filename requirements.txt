@@ -1,10 +1,14 @@
 streamlit
 PyPDF2
+requests
+spacy
+textblob
 python-docx
 langchain
 langchain_openai
 langchain_community
 openai
+langchain-core
 nltk
 rake-nltk
 ai21
