@@ -16,8 +16,8 @@ from ai21.models.chat import ChatMessage, ResponseFormat
 import asyncio
 
 # Load API keys directly (replace these with environment variables in production)
-openai.api_key = st.secrets["openai_api_key"]
-ai21_api_key = st.secrets["ai21_api_key"]
+openai_api_key = st.secrets["openai"]["api_key"]
+ai21_api_key = st.secrets["ai21"]["api_key"]
 client = AI21Client(api_key=ai21_api_key)
 
 # Initialize NLTK
