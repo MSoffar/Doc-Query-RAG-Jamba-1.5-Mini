@@ -1,7 +1,5 @@
-import os
 import streamlit as st
 import PyPDF2
-from io import BytesIO
 from docx import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -11,21 +9,29 @@ import openai
 import nltk
 from nltk.tokenize import sent_tokenize
 from rake_nltk import Rake
+from textblob import TextBlob
+import spacy
+import asyncio
+import os
+import ai21
 from ai21 import AI21Client
 from ai21.models.chat import ChatMessage, ResponseFormat
-import asyncio
 
-# Load API keys directly (replace these with environment variables in production)
-openai_api_key = st.secrets["openai"]["api_key"]
-ai21_api_key = st.secrets["ai21"]["api_key"]
-client = AI21Client(api_key=ai21_api_key)
 
-# Initialize NLTK
 nltk_data_path = os.path.join(os.path.dirname(__file__), 'nltk_data')
 nltk.data.path.append(nltk_data_path)
 
+# Load SpaCy model from local directory
+model_path = os.path.join(os.path.dirname(__file__), 'en_core_web_sm/en_core_web_sm-3.6.0')
+nlp = spacy.load(model_path)
+
+# Set your OpenAI API key
+openai.api_key = st.secrets["openai"]["api_key"]
+ai21_api_key = st.secrets["ai21"]["api_key"]
+client = AI21Client(api_key=ai21_api_key)
+
 # Streamlit app setup
-st.title("Conversational Document Query App using Jamba 1.5 Mini")
+st.title("Conversational Document Query App with FAISS")
 
 def read_pdf(file):
     """Read a PDF file and convert it to text."""
@@ -40,8 +46,8 @@ def convert_docx_to_text(file):
     doc = Document(file)
     return '\n'.join([para.text for para in doc.paragraphs])
 
-def process_documents(uploaded_files, urls):
-    """Process PDF and DOCX files and URLs."""
+def process_documents(uploaded_files):
+    """Process PDF and DOCX files."""
     documents = []
 
     # Process uploaded files
@@ -74,16 +80,14 @@ def extract_entities(chunk):
 def generate_questions(chunk):
     # Basic example, could be enhanced with a language model
     return ["What is this chunk about?", "What key points are discussed?"]
+
 def augment_chunk(chunk):
     return {
         "chunk": chunk,
         "title": generate_title(chunk),
-        "keywords": extract_keywords(chunk),
-        #"summary": generate_summary(chunk),
-        # "entities": extract_entities(chunk),
-        # "questions": generate_questions(chunk),
-        # "source": "Document X, Page Y"  # Replace with actual source info if available
+        "keywords": extract_keywords(chunk)
     }
+
 def split_text_into_chunks(text: str, chunk_size: int = 500) -> list:
     sentences = sent_tokenize(text)  # Split text into sentences
     chunks = []
@@ -100,6 +104,7 @@ def split_text_into_chunks(text: str, chunk_size: int = 500) -> list:
         chunks.append(current_chunk.strip())
 
     return chunks
+
 def create_embeddings_and_store(documents):
     """Create embeddings for the documents and store them in FAISS."""
     embeddings = OpenAIEmbeddings(openai_api_key=openai.api_key)
@@ -119,53 +124,23 @@ def create_embeddings_and_store(documents):
     # Optionally, store augmented data elsewhere or return it
     return vector_store, all_chunks
 
-def keyword_based_retrieval(query, augmented_chunks):
-    """Retrieve chunks based on keyword matching."""
-    r = Rake()
-    r.extract_keywords_from_text(query)
-    query_keywords = set(r.get_ranked_phrases())
-
-    matching_chunks = []
-    for chunk in augmented_chunks:
-        chunk_keywords = set(chunk["keywords"])
-        if query_keywords & chunk_keywords:  # If there is an intersection between query keywords and chunk keywords
-            matching_chunks.append(chunk)
-
-    return matching_chunks
-
-async def get_relevant_chunks(sub_query, retriever, augmented_chunks, top_k=5):
-    # Vector-based retrieval
-    retrieved_docs = await retriever.ainvoke(sub_query)
-    top_vector_chunks = [doc.page_content for doc in retrieved_docs[:top_k]]
-
-    # Keyword-based retrieval
-    top_keyword_chunks = keyword_based_retrieval(sub_query, augmented_chunks)
-
-    # Combine both results (you can decide how to merge them)
-    combined_chunks = top_vector_chunks + [chunk["chunk"] for chunk in top_keyword_chunks]
-
-    return list(set(combined_chunks))[:top_k]  # Deduplicate and return top_k
-
-async def process_sub_queries(sub_queries, retriever, augmented_chunks):
-    tasks = [get_relevant_chunks(sub_query.strip(), retriever, augmented_chunks, top_k=5) for sub_query in sub_queries
-             if sub_query.strip()]
-    return await asyncio.gather(*tasks)
-
 # File uploader for PDF and DOCX files
 uploaded_files = st.file_uploader("Upload PDF/DOCX files", type=["pdf", "docx"], accept_multiple_files=True)
 
-# Initialize vector store and augmented chunks in session state
+# Initialize conversation history
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# Initialize vector store
 if "vector_store" not in st.session_state:
     st.session_state.vector_store = None
-if "augmented_chunks" not in st.session_state:
-    st.session_state.augmented_chunks = None
 
 # Process documents if they haven't been processed yet
 if st.button("Process Documents"):
     documents = process_documents(uploaded_files)
 
     if documents:
-        # Only process if there are new documents uploaded
+        # Create and store embeddings, and get augmented chunks
         vector_store, all_chunks = create_embeddings_and_store(documents)
         st.session_state.vector_store = vector_store
         st.session_state.augmented_chunks = all_chunks
@@ -173,11 +148,19 @@ if st.button("Process Documents"):
     else:
         st.warning("No documents to process.")
 
+# Display the chat-like interface for the conversation
+st.header("Chat with your Documents")
+for entry in st.session_state.history:
+    st.write(f"**User:** {entry['query']}")
+    st.write(f"**Assistant:** {entry['response']}")
+
 # Text input for the user's query
 query = st.text_input("Please enter your query:", key="user_query")
 
-if "history" not in st.session_state:
-    st.session_state.history = []
+async def get_relevant_chunks(sub_query, retriever, top_k=5):
+    # Retrieve the top K most relevant chunks asynchronously
+    retrieved_docs = await retriever.ainvoke(sub_query)
+    return [doc.page_content for doc in retrieved_docs[:top_k]]
 
 if st.button("Ask") and query:
     # Ensure vector store is available
@@ -185,59 +168,45 @@ if st.button("Ask") and query:
         vector_store = st.session_state.vector_store
         retriever = VectorStoreRetriever(vectorstore=vector_store)
 
-        # Split the query into sub-queries if needed
         sub_queries = query.split('?')
-
         responses = []
 
-        # Process each sub-query
         for sub_query in sub_queries:
             sub_query = sub_query.strip()
             if sub_query:
-                # Run the async task to get the relevant chunks for each sub-query
                 top_chunks = asyncio.run(get_relevant_chunks(sub_query, retriever, top_k=5))
 
                 if top_chunks:
-                    # Retrieve augmented data from session state
                     augmented_data = [chunk for chunk in st.session_state.augmented_chunks if chunk["chunk"] in top_chunks]
-
-                    # Create a prompt using the retrieved chunks and metadata
-                    system_prompt = (
-                        "You are a highly accurate and detail-oriented assistant. You are provided with specific text chunks extracted from documents, including relevant metadata such as titles, summaries, and keywords. "
-                        "Your task is to generate responses strictly based on the information within these chunks. Under no circumstances should you utilize external knowledge or provide information not contained within the provided chunks. "
-                        "When answering a query, ensure that your response is clear, concise, and directly relevant to the question asked. "
-                        "If the query does not match any relevant information in the chunks, respond with 'No relevant information available in the provided chunks.' "
-                        "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks."
-                    )
 
                     user_prompt = sub_query + "\n\n" + "\n\n".join(
                         f"Chunk {i + 1}: {chunk['chunk'][:200]}... Title: {chunk['title']}, Keywords: {', '.join(chunk['keywords'])}"
                         for i, chunk in enumerate(augmented_data)
                     )
 
+                    # Including system prompt with each sub-query
                     response = client.chat.completions.create(
                         model="jamba-1.5-mini",
                         messages=[
                             ChatMessage(role="system", content=system_prompt),
                             ChatMessage(role="user", content=user_prompt)
-                        ]
+                        ],
+                        stream=True
                     )
 
-                    refined_response = response['choices'][0]['content'].strip()
-                    responses.append(f"**{sub_query}**: {refined_response}")
+                    refined_response = ""
+                    for chunk in response:
+                        if chunk.choices[0].delta.content:
+                            refined_response += chunk.choices[0].delta.content
+
+                    responses.append(f"**{sub_query}**: {refined_response.strip()}" if refined_response else f"**{sub_query}**: No relevant response.")
 
                 else:
                     responses.append(f"**{sub_query}**: No relevant chunks retrieved.")
 
-        # Join and display all responses
         final_response = "\n\n".join(responses)
         st.write("Refined Response:", final_response)
 
-        # Save conversation history
-        st.session_state.history.append({"query": query, "response": final_response})
-
-        # Clear the input box after processing
-        query = ""
     else:
         st.warning("Please process documents before querying.")
 
