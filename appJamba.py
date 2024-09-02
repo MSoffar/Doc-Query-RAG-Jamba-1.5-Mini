@@ -108,7 +108,7 @@ def split_text_into_chunks(text: str, max_chunk_length: int = 650, overlap_lengt
     return chunks
 def create_embeddings_and_store(documents):
     """Create embeddings for the documents and store them in FAISS."""
-    embeddings = OpenAIEmbeddings(openai_api_key=openai.api_key)
+    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
     all_chunks = []
     for document in documents:
