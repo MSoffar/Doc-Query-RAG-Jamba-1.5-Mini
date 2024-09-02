@@ -36,7 +36,7 @@ system_prompt = (
                         "covering all aspects of the question to the best of your ability."
                     )
 # Streamlit app setup
-st.title("Conversational Document Query App with FAISS")
+st.title("Conversational Document Query App using Jamba 1.5")
 
 def read_pdf(file):
     """Read a PDF file and convert it to text."""
