@@ -3,6 +3,7 @@ PyPDF2
 python-docx
 langchain
 langchain_openai
+langchain_community
 openai
 nltk
 rake-nltk
