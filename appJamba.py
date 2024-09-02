@@ -69,7 +69,7 @@ def augment_chunk(chunk):
         "keywords": extract_keywords(chunk),
     }
 
-def split_text_into_chunks(text: str, max_chunk_length: int = 450, overlap_length: int = 75) -> list:
+def split_text_into_chunks(text: str, max_chunk_length: int = 350, overlap_length: int = 75) -> list:
     paragraphs = text.split("\n\n")
     chunks = []
     current_chunk = ""
