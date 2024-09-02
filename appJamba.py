@@ -29,7 +29,12 @@ nlp = spacy.load(model_path)
 openai.api_key = st.secrets["openai"]["api_key"]
 ai21_api_key = st.secrets["ai21"]["api_key"]
 client = AI21Client(api_key=ai21_api_key)
-
+system_prompt = (
+                        "You are a helpful and knowledgeable assistant. You are given a set of text chunks from documents, along with metadata such as title, summary, and keywords. "
+                        "Please find the most relevant information based on the question below, "
+                        "using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, "
+                        "covering all aspects of the question to the best of your ability."
+                    )
 # Streamlit app setup
 st.title("Conversational Document Query App with FAISS")
 
