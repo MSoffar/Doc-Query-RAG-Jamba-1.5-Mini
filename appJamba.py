@@ -191,58 +191,57 @@ if "history" not in st.session_state:
     st.session_state.history = []
 
 if st.button("Ask") and query:
-    # Ensure vector store is available
-    if st.session_state.vector_store:
-        vector_store = st.session_state.vector_store
-        retriever = VectorStoreRetriever(vectorstore=vector_store)
-        augmented_chunks = st.session_state.augmented_chunks
+            # Ensure vector store is available
+            if st.session_state.vector_store:
+                vector_store = st.session_state.vector_store
+                retriever = VectorStoreRetriever(vectorstore=vector_store)
+                augmented_chunks = st.session_state.augmented_chunks
 
-        sub_queries = query.split('?')
-        with st.spinner("Processing your query..."):
-            # Process sub-queries in parallel
-            all_top_chunks = asyncio.run(process_sub_queries(sub_queries, retriever, augmented_chunks))
+                sub_queries = query.split('?')
+                with st.spinner("Processing your query..."):
+                    # Process sub-queries in parallel
+                    all_top_chunks = asyncio.run(process_sub_queries(sub_queries, retriever, augmented_chunks))
 
-        responses = []
-        for sub_query, top_chunks in zip(sub_queries, all_top_chunks):
-            if top_chunks:
-                augmented_data = [chunk for chunk in augmented_chunks if chunk["chunk"] in top_chunks]
+                responses = []
+                for sub_query, top_chunks in zip(sub_queries, all_top_chunks):
+                    if top_chunks:
+                        augmented_data = [chunk for chunk in augmented_chunks if chunk["chunk"] in top_chunks]
 
-                user_prompt = sub_query + "\n\n" + "\n\n".join(
-                    f"Chunk {i + 1}: {chunk['chunk'][:200]}... Title: {chunk['title']}, Keywords: {', '.join(chunk['keywords'])}"
-                    for i, chunk in enumerate(augmented_data)
-                )
+                        user_prompt = sub_query + "\n\n" + "\n\n".join(
+                            f"Chunk {i + 1}: {chunk['chunk'][:200]}... Title: {chunk['title']}, Keywords: {', '.join(chunk['keywords'])}"
+                            for i, chunk in enumerate(augmented_data)
+                        )
 
-               response = client.chat.completions.create(
-    model="jamba-1.5-mini",
-    messages=[
-        ChatMessage(
-            role="system",
-            content=(
-                "You are a highly accurate and detail-oriented assistant. You are provided with specific text chunks extracted from documents, including relevant metadata such as titles, summaries, and keywords. "
-                "Your task is to generate responses strictly based on the information within these chunks. Under no circumstances should you utilize external knowledge or provide information not contained within the provided chunks. "
-                "When answering a query, ensure that your response is clear, concise, and directly relevant to the question asked. "
-                "Format your response as follows: 'Q: [User's query] \n A: [Your answer]'. "
-                "If the query does not match any relevant information in the chunks, respond with 'No relevant information available in the provided chunks.' "
-                "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks."
-            )
-        ),
-        ChatMessage(role="user", content=user_prompt)
-    ]
-)
+                        response = client.chat.completions.create(
+                            model="jamba-1.5-mini",
+                            messages=[
+                                ChatMessage(
+                                    role="system",
+                                    content=(
+                                        "You are a highly accurate and detail-oriented assistant. You are provided with specific text chunks extracted from documents, including relevant metadata such as titles, summaries, and keywords. "
+                                        "Your task is to generate responses strictly based on the information within these chunks. Under no circumstances should you utilize external knowledge or provide information not contained within the provided chunks. "
+                                        "When answering a query, ensure that your response is clear, concise, and directly relevant to the question asked. "
+                                        "Format your response as follows: 'Q: [User's query] \n A: [Your answer]'. "
+                                        "If the query does not match any relevant information in the chunks, respond with 'No relevant information available in the provided chunks.' "
+                                        "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks."
+                                    )
+                                ),
+                                ChatMessage(role="user", content=user_prompt)
+                            ]
+                        )
 
+                        refined_response = ""
+                        for chunk in response.choices[0].message.content:
+                            refined_response += chunk
 
-                refined_response = ""
-                for chunk in response.choices[0].message.content:
-                    refined_response += chunk
+                        st.markdown(refined_response.strip())
+                        st.session_state.history.append(refined_response.strip())
 
-                st.markdown(refined_response.strip())
-                st.session_state.history.append(refined_response.strip())
+                        responses.append(
+                            f"**{sub_query.strip()}**: {refined_response.strip()}" if refined_response else f"**{sub_query.strip()}**: No relevant response.")
 
-                responses.append(
-                    f"**{sub_query.strip()}**: {refined_response.strip()}" if refined_response else f"**{sub_query.strip()}**: No relevant response.")
+                    else:
+                        responses.append(f"**{sub_query.strip()}**: No relevant chunks retrieved.")
 
             else:
-                responses.append(f"**{sub_query.strip()}**: No relevant chunks retrieved.")
-
-    else:
-        st.warning("Please process documents before querying.")
+                st.warning("Please process documents before querying.")
