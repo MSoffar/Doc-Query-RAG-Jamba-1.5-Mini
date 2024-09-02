@@ -76,7 +76,7 @@ def augment_chunk(chunk):
     }
 
 
-def split_text_into_chunks(text: str, max_chunk_length: int = 650, overlap_length: int = 150) -> list:
+def split_text_into_chunks(text: str, max_chunk_length: int = 500, overlap_length: int = 50) -> list:
     paragraphs = text.split("\n\n")
     chunks = []
     current_chunk = ""
