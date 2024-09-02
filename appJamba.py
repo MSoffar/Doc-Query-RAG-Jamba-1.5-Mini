@@ -181,9 +181,9 @@ if st.button("Process Documents"):
 # Text input for the user's query
 query = st.text_input("Please enter your query:", key="user_query")
 
-# Reset chat button
-if st.button("Reset Chat"):
-    st.session_state.history = []
+# # Reset chat button
+# if st.button("Reset Chat"):
+#     st.session_state.history = []
 
 if "history" not in st.session_state:
     st.session_state.history = []
