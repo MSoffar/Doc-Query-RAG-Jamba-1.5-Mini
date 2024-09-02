@@ -40,10 +40,11 @@ def convert_docx_to_text(file):
     doc = Document(file)
     return '\n'.join([para.text for para in doc.paragraphs])
 
-def process_documents(uploaded_files):
-    """Process PDF and DOCX files."""
+def process_documents(uploaded_files, urls):
+    """Process PDF and DOCX files and URLs."""
     documents = []
 
+    # Process uploaded files
     for file in uploaded_files:
         if file.type == "application/pdf":
             text = read_pdf(file)
@@ -62,60 +63,60 @@ def extract_keywords(chunk):
     r.extract_keywords_from_text(chunk)
     return r.get_ranked_phrases()
 
+def generate_summary(chunk):
+    sentences = sent_tokenize(chunk)
+    return sentences[0] if len(sentences) > 1 else chunk[:100] + '...'
+
+def extract_entities(chunk):
+    doc = nlp(chunk)
+    return [(ent.text, ent.label_) for ent in doc.ents]
+
+def generate_questions(chunk):
+    # Basic example, could be enhanced with a language model
+    return ["What is this chunk about?", "What key points are discussed?"]
 def augment_chunk(chunk):
     return {
         "chunk": chunk,
         "title": generate_title(chunk),
         "keywords": extract_keywords(chunk),
+        #"summary": generate_summary(chunk),
+        # "entities": extract_entities(chunk),
+        # "questions": generate_questions(chunk),
+        # "source": "Document X, Page Y"  # Replace with actual source info if available
     }
-
-def split_text_into_chunks(text: str, max_chunk_length: int = 350, overlap_length: int = 75) -> list:
-    paragraphs = text.split("\n\n")
+def split_text_into_chunks(text: str, chunk_size: int = 500) -> list:
+    sentences = sent_tokenize(text)  # Split text into sentences
     chunks = []
     current_chunk = ""
-    current_length = 0
 
-    for paragraph in paragraphs:
-        sentences = sent_tokenize(paragraph)
-
-        for sentence in sentences:
-            sentence_length = len(sentence)
-
-            if current_length + sentence_length <= max_chunk_length:
-                current_chunk += sentence + " "
-                current_length += sentence_length + 1  # +1 for the space
-            else:
-                chunks.append(current_chunk.strip())
-
-                # Start new chunk with overlap
-                current_chunk = current_chunk[-overlap_length:].strip() + " " + sentence + " "
-                current_length = len(current_chunk)
-
-        if current_chunk.strip():
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) <= chunk_size:
+            current_chunk += sentence + " "
+        else:
             chunks.append(current_chunk.strip())
-            current_chunk = ""  # Reset for next paragraph
-            current_length = 0
+            current_chunk = sentence + " "
 
-    # Add any remaining chunk
-    if current_chunk.strip():
+    if current_chunk:
         chunks.append(current_chunk.strip())
 
     return chunks
-
 def create_embeddings_and_store(documents):
     """Create embeddings for the documents and store them in FAISS."""
-    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+    embeddings = OpenAIEmbeddings(openai_api_key=openai.api_key)
 
+    # Split documents into smaller chunks using NLTK
     all_chunks = []
     for document in documents:
-        chunks = split_text_into_chunks(document)
+        chunks = split_text_into_chunks(document, chunk_size=500)
         for chunk in chunks:
             augmented_chunk = augment_chunk(chunk)
             all_chunks.append(augmented_chunk)
 
+    # Create and store embeddings in FAISS
     texts = [chunk["chunk"] for chunk in all_chunks]
     vector_store = FAISS.from_texts(texts, embeddings)
 
+    # Optionally, store augmented data elsewhere or return it
     return vector_store, all_chunks
 
 def keyword_based_retrieval(query, augmented_chunks):
@@ -183,50 +184,60 @@ if st.button("Ask") and query:
     if st.session_state.vector_store:
         vector_store = st.session_state.vector_store
         retriever = VectorStoreRetriever(vectorstore=vector_store)
-        augmented_chunks = st.session_state.augmented_chunks
 
+        # Split the query into sub-queries if needed
         sub_queries = query.split('?')
-        with st.spinner("Processing your query..."):
-            # Process sub-queries in parallel
-            all_top_chunks = asyncio.run(process_sub_queries(sub_queries, retriever, augmented_chunks))
 
         responses = []
-        for sub_query, top_chunks in zip(sub_queries, all_top_chunks):
-            if top_chunks:
-                augmented_data = [chunk for chunk in augmented_chunks if chunk["chunk"] in top_chunks]
 
-                user_prompt = sub_query + "\n\n" + "\n\n".join(
-                    f"Chunk {i + 1}: {chunk['chunk'][:200]}... Title: {chunk['title']}, Keywords: {', '.join(chunk['keywords'])}"
-                    for i, chunk in enumerate(augmented_data)
-                )
+        # Process each sub-query
+        for sub_query in sub_queries:
+            sub_query = sub_query.strip()
+            if sub_query:
+                # Run the async task to get the relevant chunks for each sub-query
+                top_chunks = asyncio.run(get_relevant_chunks(sub_query, retriever, top_k=5))
 
-                response = client.chat.completions.create(
-                    model="jamba-1.5-mini",
-                    messages=[
-                        ChatMessage(
-                            role="system",
-                            content=(
-                                "You are a highly accurate and detail-oriented assistant. You are provided with specific text chunks extracted from documents, including relevant metadata such as titles, summaries, and keywords. "
-                                "Your task is to generate responses strictly based on the information within these chunks. Under no circumstances should you utilize external knowledge or provide information not contained within the provided chunks. "
-                                "When answering a query, ensure that your response is clear, concise, and directly relevant to the question asked. "
-                                "If the query does not match any relevant information in the chunks, respond with 'No relevant information available in the provided chunks.' "
-                                "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks."
-                            )
-                        ),
-                        ChatMessage(role="user", content=user_prompt)
-                    ]
-                )
+                if top_chunks:
+                    # Retrieve augmented data from session state
+                    augmented_data = [chunk for chunk in st.session_state.augmented_chunks if chunk["chunk"] in top_chunks]
 
-                refined_response = response['choices'][0]['message']['content'].strip()
+                    # Create a prompt using the retrieved chunks and metadata
+                    system_prompt = (
+                        "You are a highly accurate and detail-oriented assistant. You are provided with specific text chunks extracted from documents, including relevant metadata such as titles, summaries, and keywords. "
+                        "Your task is to generate responses strictly based on the information within these chunks. Under no circumstances should you utilize external knowledge or provide information not contained within the provided chunks. "
+                        "When answering a query, ensure that your response is clear, concise, and directly relevant to the question asked. "
+                        "If the query does not match any relevant information in the chunks, respond with 'No relevant information available in the provided chunks.' "
+                        "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks."
+                    )
 
-                st.markdown(refined_response.strip())
-                st.session_state.history.append(refined_response.strip())
+                    user_prompt = sub_query + "\n\n" + "\n\n".join(
+                        f"Chunk {i + 1}: {chunk['chunk'][:200]}... Title: {chunk['title']}, Keywords: {', '.join(chunk['keywords'])}"
+                        for i, chunk in enumerate(augmented_data)
+                    )
 
-                responses.append(
-                    f"**{sub_query.strip()}**: {refined_response.strip()}" if refined_response else f"**{sub_query.strip()}**: No relevant response.")
+                    response = client.chat.completions.create(
+                        model="jamba-1.5-mini",
+                        messages=[
+                            ChatMessage(role="system", content=system_prompt),
+                            ChatMessage(role="user", content=user_prompt)
+                        ]
+                    )
 
-            else:
-                responses.append(f"**{sub_query.strip()}**: No relevant chunks retrieved.")
+                    refined_response = response['choices'][0]['content'].strip()
+                    responses.append(f"**{sub_query}**: {refined_response}")
 
+                else:
+                    responses.append(f"**{sub_query}**: No relevant chunks retrieved.")
+
+        # Join and display all responses
+        final_response = "\n\n".join(responses)
+        st.write("Refined Response:", final_response)
+
+        # Save conversation history
+        st.session_state.history.append({"query": query, "response": final_response})
+
+        # Clear the input box after processing
+        query = ""
     else:
         st.warning("Please process documents before querying.")
+
