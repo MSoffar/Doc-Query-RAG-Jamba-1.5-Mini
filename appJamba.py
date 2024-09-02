@@ -136,8 +136,14 @@ def filter_relevant_chunks(query, chunks):
     """Filter out chunks that contain keywords directly related to the query."""
     relevant_chunks = []
     for chunk in chunks:
-        if any(keyword in chunk['chunk'].lower() for keyword in query.lower().split()):
-            relevant_chunks.append(chunk)
+        if isinstance(chunk, dict) and 'chunk' in chunk:
+            # Check if the chunk text contains any of the keywords from the query
+            if any(keyword in chunk['chunk'].lower() for keyword in query.lower().split()):
+                relevant_chunks.append(chunk['chunk'])
+        elif isinstance(chunk, str):
+            # If chunks are directly strings, just match against them
+            if any(keyword in chunk.lower() for keyword in query.lower().split()):
+                relevant_chunks.append(chunk)
     return relevant_chunks
 
 async def get_relevant_chunks(sub_query, retriever, augmented_chunks, top_k=5):
@@ -221,7 +227,7 @@ if st.button("Ask") and query:
                                 "When answering a query, ensure that your response is clear, concise, and directly relevant to the question asked. "
                                 "Format your response as follows: 'Q: [User's query] \n A: [Your answer]'. "
                                 "If the query does not match any relevant information in the chunks, respond with 'No relevant information available in the provided chunks.' "
-                                "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks."
+                                "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks. MOST IMPORTANT, ANSWER IN THE GIVEN FORMAT! Q: \n A:"
                             )
                         ),
                         ChatMessage(role="user", content=user_prompt)
