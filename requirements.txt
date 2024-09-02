@@ -13,3 +13,4 @@ nltk
 rake-nltk
 ai21
 asyncio
+faiss-cpu
