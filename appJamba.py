@@ -217,9 +217,7 @@ if st.button("Ask") and query:
                     ]
                 )
 
-                refined_response = ""
-                for chunk in response.choices[0].message.content:
-                    refined_response += chunk
+                refined_response = response['choices'][0]['message']['content'].strip()
 
                 st.markdown(refined_response.strip())
                 st.session_state.history.append(refined_response.strip())
