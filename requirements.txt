@@ -2,6 +2,7 @@ streamlit
 PyPDF2
 python-docx
 langchain
+langchain_openai
 openai
 nltk
 rake-nltk
