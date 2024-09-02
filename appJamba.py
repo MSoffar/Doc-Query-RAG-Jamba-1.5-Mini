@@ -74,6 +74,8 @@ def augment_chunk(chunk):
         "title": generate_title(chunk),
         "keywords": extract_keywords(chunk),
     }
+
+
 def split_text_into_chunks(text: str, max_chunk_length: int = 650, overlap_length: int = 150) -> list:
     paragraphs = text.split("\n\n")
     chunks = []
@@ -106,6 +108,8 @@ def split_text_into_chunks(text: str, max_chunk_length: int = 650, overlap_lengt
         chunks.append(current_chunk.strip())
 
     return chunks
+
+
 def create_embeddings_and_store(documents):
     """Create embeddings for the documents and store them in FAISS."""
     embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
@@ -161,9 +165,11 @@ async def process_sub_queries(sub_queries, retriever, augmented_chunks):
 # File uploader for PDF and DOCX files
 uploaded_files = st.file_uploader("Upload PDF/DOCX files", type=["pdf", "docx"], accept_multiple_files=True)
 
-# Initialize vector store
+# Initialize vector store and augmented chunks in session state
 if "vector_store" not in st.session_state:
     st.session_state.vector_store = None
+if "augmented_chunks" not in st.session_state:
+    st.session_state.augmented_chunks = None
 
 # Process documents if they haven't been processed yet
 if st.button("Process Documents"):
@@ -180,10 +186,6 @@ if st.button("Process Documents"):
 
 # Text input for the user's query
 query = st.text_input("Please enter your query:", key="user_query")
-
-# # Reset chat button
-# if st.button("Reset Chat"):
-#     st.session_state.history = []
 
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -214,7 +216,7 @@ if st.button("Ask") and query:
                     model="jamba-1.5-mini",
                     messages=[
                         ChatMessage(role="system",
-                                    content="You are a helpful and knowledgeable assistant. You are given a set of text chunks from documents,'ANSWER ONLY FROM CHUNKS!', along with metadata such as title, summary, and keywords. Please find the most relevant information based on the question below, using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, covering all aspects of the question to the best of your ability.MOST IMPORTANT RULE AND DONT EVER BREAK IT! ONLY ANSWER FROM INFO IN CHUNKS! DONT EVER ANSWER FROM YOUR KNOWLEDGE DONT USE ANYTHING EXCEPT THE CHUNKS!"),
+                                    content="You are a helpful and knowledgeable assistant. You are given a set of text chunks from documents, along with metadata such as title, summary, and keywords. Please find the most relevant information based on the question below, using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, covering all aspects of the question to the best of your ability. MOST IMPORTANT RULE AND DONT EVER BREAK IT! ONLY ANSWER FROM INFO IN CHUNKS! DONT EVER ANSWER FROM YOUR KNOWLEDGE DONT USE ANYTHING EXCEPT THE CHUNKS!"),
                         ChatMessage(role="user", content=user_prompt)
                     ]
                 )
@@ -231,9 +233,6 @@ if st.button("Ask") and query:
 
             else:
                 responses.append(f"**{sub_query.strip()}**: No relevant chunks retrieved.")
-
-        # final_response = "\n\n".join(responses)
-        # st.write("Final Refined Response:", final_response)
 
     else:
         st.warning("Please process documents before querying.")
