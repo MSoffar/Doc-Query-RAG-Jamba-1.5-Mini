@@ -1,0 +1,9 @@
+streamlit
+PyPDF2
+python-docx
+langchain
+openai
+nltk
+rake-nltk
+ai21
+asyncio
