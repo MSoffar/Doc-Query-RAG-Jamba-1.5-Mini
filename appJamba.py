@@ -213,11 +213,11 @@ if st.button("Ask") and query:
                 )
 
                response = client.chat.completions.create(
-                            model="jamba-1.5-mini",
-                            messages=[
-                            ChatMessage(
-                                role="system",
-                                content=(
+    model="jamba-1.5-mini",
+    messages=[
+        ChatMessage(
+            role="system",
+            content=(
                 "You are a highly accurate and detail-oriented assistant. You are provided with specific text chunks extracted from documents, including relevant metadata such as titles, summaries, and keywords. "
                 "Your task is to generate responses strictly based on the information within these chunks. Under no circumstances should you utilize external knowledge or provide information not contained within the provided chunks. "
                 "When answering a query, ensure that your response is clear, concise, and directly relevant to the question asked. "
@@ -226,9 +226,10 @@ if st.button("Ask") and query:
                 "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks."
             )
         ),
-                            ChatMessage(role="user", content=user_prompt)
+        ChatMessage(role="user", content=user_prompt)
     ]
 )
+
 
                 refined_response = ""
                 for chunk in response.choices[0].message.content:
