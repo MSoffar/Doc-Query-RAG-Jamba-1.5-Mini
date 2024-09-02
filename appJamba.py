@@ -27,6 +27,7 @@ nltk.data.path.append(nltk_data_path)
 # Streamlit app setup
 st.title("Conversational Document Query App using Jamba 1.5 Mini")
 
+
 def read_pdf(file):
     """Read a PDF file and convert it to text."""
     reader = PyPDF2.PdfReader(file)
@@ -35,10 +36,12 @@ def read_pdf(file):
         text += page.extract_text()
     return text
 
+
 def convert_docx_to_text(file):
     """Convert a DOCX file to text."""
     doc = Document(file)
     return '\n'.join([para.text for para in doc.paragraphs])
+
 
 def process_documents(uploaded_files):
     """Process PDF and DOCX files."""
@@ -54,13 +57,16 @@ def process_documents(uploaded_files):
 
     return documents
 
+
 def generate_title(chunk):
     return chunk.split('.')[0][:50] + '...'
+
 
 def extract_keywords(chunk):
     r = Rake()
     r.extract_keywords_from_text(chunk)
     return r.get_ranked_phrases()
+
 
 def augment_chunk(chunk):
     return {
@@ -69,7 +75,8 @@ def augment_chunk(chunk):
         "keywords": extract_keywords(chunk),
     }
 
-def split_text_into_chunks(text: str, max_chunk_length: int = 650, overlap_length: int = 150) -> list:
+
+def split_text_into_chunks(text: str, max_chunk_length: int = 500, overlap_length: int = 50) -> list:
     paragraphs = text.split("\n\n")
     chunks = []
     current_chunk = ""
@@ -102,6 +109,7 @@ def split_text_into_chunks(text: str, max_chunk_length: int = 650, overlap_lengt
 
     return chunks
 
+
 def create_embeddings_and_store(documents):
     """Create embeddings for the documents and store them in FAISS."""
     embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
@@ -118,6 +126,7 @@ def create_embeddings_and_store(documents):
 
     return vector_store, all_chunks
 
+
 def keyword_based_retrieval(query, augmented_chunks):
     """Retrieve chunks based on keyword matching."""
     r = Rake()
@@ -132,39 +141,26 @@ def keyword_based_retrieval(query, augmented_chunks):
 
     return matching_chunks
 
-def filter_relevant_chunks(query, chunks):
-    """Filter out chunks that contain keywords directly related to the query."""
-    relevant_chunks = []
-    for chunk in chunks:
-        if isinstance(chunk, dict) and 'chunk' in chunk:
-            # Check if the chunk text contains any of the keywords from the query
-            if any(keyword in chunk['chunk'].lower() for keyword in query.lower().split()):
-                relevant_chunks.append(chunk['chunk'])
-        elif isinstance(chunk, str):
-            # If chunks are directly strings, just match against them
-            if any(keyword in chunk.lower() for keyword in query.lower().split()):
-                relevant_chunks.append(chunk)
-    return relevant_chunks
 
 async def get_relevant_chunks(sub_query, retriever, augmented_chunks, top_k=5):
-    # First, retrieve chunks using vector-based and keyword-based retrieval
+    # Vector-based retrieval
     retrieved_docs = await retriever.ainvoke(sub_query)
     top_vector_chunks = [doc.page_content for doc in retrieved_docs[:top_k]]
+
+    # Keyword-based retrieval
     top_keyword_chunks = keyword_based_retrieval(sub_query, augmented_chunks)
 
+    # Combine both results (you can decide how to merge them)
     combined_chunks = top_vector_chunks + [chunk["chunk"] for chunk in top_keyword_chunks]
-    combined_chunks = list(set(combined_chunks))[:top_k]  # Deduplicate and limit to top_k
 
-    # Filter these combined chunks to match the query more strictly
-    relevant_chunks = filter_relevant_chunks(sub_query, combined_chunks)
-    
-    # Return only the most relevant chunks
-    return relevant_chunks
+    return list(set(combined_chunks))[:top_k]  # Deduplicate and return top_k
+
 
 async def process_sub_queries(sub_queries, retriever, augmented_chunks):
     tasks = [get_relevant_chunks(sub_query.strip(), retriever, augmented_chunks, top_k=5) for sub_query in sub_queries
              if sub_query.strip()]
     return await asyncio.gather(*tasks)
+
 
 # File uploader for PDF and DOCX files
 uploaded_files = st.file_uploader("Upload PDF/DOCX files", type=["pdf", "docx"], accept_multiple_files=True)
@@ -195,63 +191,57 @@ if "history" not in st.session_state:
     st.session_state.history = []
 
 if st.button("Ask") and query:
-    # Ensure vector store is available
-    if st.session_state.vector_store:
-        vector_store = st.session_state.vector_store
-        retriever = VectorStoreRetriever(vectorstore=vector_store)
-        augmented_chunks = st.session_state.augmented_chunks
+            # Ensure vector store is available
+            if st.session_state.vector_store:
+                vector_store = st.session_state.vector_store
+                retriever = VectorStoreRetriever(vectorstore=vector_store)
+                augmented_chunks = st.session_state.augmented_chunks
 
-        sub_queries = query.split('?')
-        with st.spinner("Processing your query..."):
-            # Process sub-queries in parallel
-            all_top_chunks = asyncio.run(process_sub_queries(sub_queries, retriever, augmented_chunks))
+                sub_queries = query.split('?')
+                with st.spinner("Processing your query..."):
+                    # Process sub-queries in parallel
+                    all_top_chunks = asyncio.run(process_sub_queries(sub_queries, retriever, augmented_chunks))
 
-        responses = []
-        for sub_query, top_chunks in zip(sub_queries, all_top_chunks):
-            if top_chunks:
-                augmented_data = [chunk for chunk in augmented_chunks if chunk["chunk"] in top_chunks]
+                responses = []
+                for sub_query, top_chunks in zip(sub_queries, all_top_chunks):
+                    if top_chunks:
+                        augmented_data = [chunk for chunk in augmented_chunks if chunk["chunk"] in top_chunks]
 
-                user_prompt = sub_query + "\n\n" + "\n\n".join(
-                    f"Chunk {i + 1}: {chunk['chunk'][:200]}... Title: {chunk['title']}, Keywords: {', '.join(chunk['keywords'])}"
-                    for i, chunk in enumerate(augmented_data)
-                )
+                        user_prompt = sub_query + "\n\n" + "\n\n".join(
+                            f"Chunk {i + 1}: {chunk['chunk'][:200]}... Title: {chunk['title']}, Keywords: {', '.join(chunk['keywords'])}"
+                            for i, chunk in enumerate(augmented_data)
+                        )
 
-                response = client.chat.completions.create(
-                    model="jamba-1.5-mini",
-                    messages=[
-                        ChatMessage(
-                            role="system",
-                            content=(
+                        response = client.chat.completions.create(
+                            model="jamba-1.5-mini",
+                            messages=[
+                                ChatMessage(
+                                    role="system",
+                                    content=(
                                 "You are a highly accurate and detail-oriented assistant. You are provided with specific text chunks extracted from documents, including relevant metadata such as titles, summaries, and keywords. "
                                 "Your task is to generate responses strictly based on the information within these chunks. Under no circumstances should you utilize external knowledge or provide information not contained within the provided chunks. "
                                 "When answering a query, ensure that your response is clear, concise, and directly relevant to the question asked. "
                                 "Format your response as follows: 'Q: [User's query] \n A: [Your answer]'. "
                                 "If the query does not match any relevant information in the chunks, respond with 'No relevant information available in the provided chunks.' "
                                 "It is critical that your answers are derived solely from the content within the chunks provided. Do not infer, assume, or use any information outside of the provided chunks. MOST IMPORTANT, ANSWER IN THE GIVEN FORMAT! Q: \n A:"
-                            )
-                        ),
-                        ChatMessage(role="user", content=user_prompt)
-                    ]
-                )
+                                  )
+                                ),
+                                ChatMessage(role="user", content=user_prompt)
+                            ]
+                        )
 
-                refined_response = response.choices[0].message.content.strip()
-                
-                # Validate that the response only contains information from the chunks
-                validated_response = None
-                for chunk in top_chunks:
-                    if refined_response in chunk:
-                        validated_response = refined_response
-                        break
-                
-                if validated_response:
-                    st.markdown(validated_response)
-                    st.session_state.history.append(validated_response)
-                    responses.append(f"**{sub_query.strip()}**: {validated_response}")
-                else:
-                    responses.append(f"**{sub_query.strip()}**: No relevant information available in the provided chunks.")
+                        refined_response = ""
+                        for chunk in response.choices[0].message.content:
+                            refined_response += chunk
+
+                        st.markdown(refined_response.strip())
+                        st.session_state.history.append(refined_response.strip())
+
+                        responses.append(
+                            f"**{sub_query.strip()}**: {refined_response.strip()}" if refined_response else f"**{sub_query.strip()}**: No relevant response.")
+
+                    else:
+                        responses.append(f"**{sub_query.strip()}**: No relevant chunks retrieved.")
 
             else:
-                responses.append(f"**{sub_query.strip()}**: No relevant chunks retrieved.")
-
-    else:
-        st.warning("Please process documents before querying.")
+                st.warning("Please process documents before querying.")
