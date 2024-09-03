@@ -32,7 +32,7 @@ client = AI21Client(api_key=ai21_api_key)
 system_prompt = (
     "You are a helpful and knowledgeable assistant. You are given a set of text chunks from documents, along with metadata such as title, summary, and keywords. "
     "Please find the most relevant information based on the question below, "
-    "using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, "
+    "using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, DONT EVER MENTION WHICH CHUNK ARE YOU REFERRING TO!!"
     "covering all aspects of the question to the best of your ability. Don't mention from which chunk are you giving info! Dont Repeat info!"
 )
 
