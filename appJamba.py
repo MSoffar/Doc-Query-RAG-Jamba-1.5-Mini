@@ -190,6 +190,9 @@ def simulate_typing(response_text, chat_placeholder, delay=0.005):
         chat_placeholder.markdown(typed_text)
         time.sleep(delay)
 
+if st.button("Delete Chat"):
+    st.session_state.history = []
+
 
 if st.button("Ask") and query:
     # Ensure vector store is available
