@@ -1,5 +1,6 @@
 import streamlit as st
 import PyPDF2
+import time
 from docx import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -15,8 +16,7 @@ import asyncio
 import os
 import ai21
 from ai21 import AI21Client
-from ai21.models.chat import ChatMessage, ResponseFormat
-
+from ai21.models.chat import ChatMessage
 
 nltk_data_path = os.path.join(os.path.dirname(__file__), 'nltk_data')
 nltk.data.path.append(nltk_data_path)
@@ -30,13 +30,16 @@ openai.api_key = st.secrets["openai"]["api_key"]
 ai21_api_key = st.secrets["ai21"]["api_key"]
 client = AI21Client(api_key=ai21_api_key)
 system_prompt = (
-                        "You are a helpful and knowledgeable assistant. You are given a set of text chunks from documents, along with metadata such as title, summary, and keywords. "
-                        "Please find the most relevant information based on the question below, "
-                        "using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, "
-                        "covering all aspects of the question to the best of your ability."
-                    )
+    "You are a helpful and knowledgeable assistant. You are given a set of text chunks from documents, along with metadata such as title, summary, and keywords. "
+    "Please find the most relevant information based on the question below, "
+    "using only the provided chunks and metadata. Ensure your response is comprehensive, accurate, and informative, "
+    "covering all aspects of the question to the best of your ability. Don't mention from which chunk are you giving info!"
+)
+
+
 # Streamlit app setup
 st.title("Conversational Document Query App using Jamba 1.5")
+
 
 def read_pdf(file):
     """Read a PDF file and convert it to text."""
@@ -46,10 +49,12 @@ def read_pdf(file):
         text += page.extract_text()
     return text
 
+
 def convert_docx_to_text(file):
     """Convert a DOCX file to text."""
     doc = Document(file)
     return '\n'.join([para.text for para in doc.paragraphs])
+
 
 def process_documents(uploaded_files):
     """Process PDF and DOCX files."""
@@ -66,25 +71,31 @@ def process_documents(uploaded_files):
 
     return documents
 
+
 def generate_title(chunk):
     return chunk.split('.')[0][:50] + '...'
+
 
 def extract_keywords(chunk):
     r = Rake()
     r.extract_keywords_from_text(chunk)
     return r.get_ranked_phrases()
 
+
 def generate_summary(chunk):
     sentences = sent_tokenize(chunk)
     return sentences[0] if len(sentences) > 1 else chunk[:100] + '...'
+
 
 def extract_entities(chunk):
     doc = nlp(chunk)
     return [(ent.text, ent.label_) for ent in doc.ents]
 
+
 def generate_questions(chunk):
     # Basic example, could be enhanced with a language model
     return ["What is this chunk about?", "What key points are discussed?"]
+
 
 def augment_chunk(chunk):
     return {
@@ -92,6 +103,7 @@ def augment_chunk(chunk):
         "title": generate_title(chunk),
         "keywords": extract_keywords(chunk)
     }
+
 
 def split_text_into_chunks(text: str, chunk_size: int = 500) -> list:
     sentences = sent_tokenize(text)  # Split text into sentences
@@ -109,6 +121,7 @@ def split_text_into_chunks(text: str, chunk_size: int = 500) -> list:
         chunks.append(current_chunk.strip())
 
     return chunks
+
 
 def create_embeddings_and_store(documents):
     """Create embeddings for the documents and store them in FAISS."""
@@ -128,6 +141,7 @@ def create_embeddings_and_store(documents):
 
     # Optionally, store augmented data elsewhere or return it
     return vector_store, all_chunks
+
 
 # File uploader for PDF and DOCX files
 uploaded_files = st.file_uploader("Upload PDF/DOCX files", type=["pdf", "docx"], accept_multiple_files=True)
@@ -162,10 +176,20 @@ for entry in st.session_state.history:
 # Text input for the user's query
 query = st.text_input("Please enter your query:", key="user_query")
 
+
 async def get_relevant_chunks(sub_query, retriever, top_k=5):
     # Retrieve the top K most relevant chunks asynchronously
     retrieved_docs = await retriever.ainvoke(sub_query)
     return [doc.page_content for doc in retrieved_docs[:top_k]]
+
+
+def simulate_typing(response_text, chat_placeholder, delay=0.005):
+    typed_text = ""
+    for char in response_text:
+        typed_text += char
+        chat_placeholder.markdown(typed_text)
+        time.sleep(delay)
+
 
 if st.button("Ask") and query:
     # Ensure vector store is available
@@ -182,7 +206,8 @@ if st.button("Ask") and query:
                 top_chunks = asyncio.run(get_relevant_chunks(sub_query, retriever, top_k=5))
 
                 if top_chunks:
-                    augmented_data = [chunk for chunk in st.session_state.augmented_chunks if chunk["chunk"] in top_chunks]
+                    augmented_data = [chunk for chunk in st.session_state.augmented_chunks if
+                                      chunk["chunk"] in top_chunks]
 
                     user_prompt = sub_query + "\n\n" + "\n\n".join(
                         f"Chunk {i + 1}: {chunk['chunk'][:200]}... Title: {chunk['title']}, Keywords: {', '.join(chunk['keywords'])}"
@@ -204,14 +229,23 @@ if st.button("Ask") and query:
                         if chunk.choices[0].delta.content:
                             refined_response += chunk.choices[0].delta.content
 
-                    responses.append(f"**{sub_query}**: {refined_response.strip()}" if refined_response else f"**{sub_query}**: No relevant response.")
+                    responses.append(
+                        f"**{sub_query}**: {refined_response.strip()}" if refined_response else f"**{sub_query}**: No relevant response.")
 
                 else:
                     responses.append(f"**{sub_query}**: No relevant chunks retrieved.")
 
         final_response = "\n\n".join(responses)
-        st.write("Refined Response:", final_response)
+
+        # Create a placeholder for simulating typing effect
+        chat_placeholder = st.empty()
+        simulate_typing(final_response, chat_placeholder)
+
+        # Store the conversation history
+        st.session_state.history.append({
+            "query": query,
+            "response": final_response
+        })
 
     else:
         st.warning("Please process documents before querying.")
-
